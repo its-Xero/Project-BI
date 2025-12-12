@@ -43,6 +43,14 @@ class NorthwindTransformer:
                     df_clean[col] = pd.to_datetime(df_clean[col], errors='coerce')
                 except:
                     print(f"  ⚠ Impossible de convertir la colonne {col}")
+
+        # Also parse invoice/due dates if present
+        for col in ['InvoiceDate', 'DueDate']:
+            if col in df_clean.columns:
+                try:
+                    df_clean[col] = pd.to_datetime(df_clean[col], errors='coerce')
+                except:
+                    print(f"  ⚠ Impossible de convertir la colonne {col}")
         
         # 2. Extraire des composantes temporelles (si OrderDate existe)
         if 'OrderDate' in df_clean.columns:
@@ -80,6 +88,49 @@ class NorthwindTransformer:
                 df_clean[col] = df_clean[col].fillna('Inconnu')
         
         missing_after = df_clean.isnull().sum().sum()
+
+        # Additional targeted imputations for important columns
+        # Notes: replace NaN with a clear placeholder so CSV -> DB keeps a value
+        if 'Notes' in df_clean.columns:
+            df_clean['Notes'] = df_clean['Notes'].fillna('Inconnu')
+
+        # TaxStatus: if missing, infer from TaxRate (Taxable / Non-taxable)
+        if 'TaxStatus' in df_clean.columns:
+            if 'TaxRate' in df_clean.columns:
+                df_clean['TaxStatus'] = df_clean['TaxStatus'].fillna(
+                    df_clean['TaxRate'].apply(lambda x: 'Taxable' if pd.notnull(x) and x > 0 else 'Non-taxable')
+                )
+            else:
+                df_clean['TaxStatus'] = df_clean['TaxStatus'].fillna('Unknown')
+
+        # InvoiceDate: if missing, fallback to OrderDate
+        if 'InvoiceDate' in df_clean.columns and 'OrderDate' in df_clean.columns:
+            df_clean['InvoiceDate'] = df_clean['InvoiceDate'].fillna(df_clean['OrderDate'])
+
+        # DueDate: if missing, try to infer from InvoiceDate, otherwise set to OrderDate + 30 days
+        if 'DueDate' in df_clean.columns:
+            if 'InvoiceDate' in df_clean.columns:
+                df_clean['DueDate'] = df_clean['DueDate'].fillna(df_clean['InvoiceDate'] + pd.Timedelta(days=30))
+            # second fallback: use OrderDate
+            if 'OrderDate' in df_clean.columns:
+                df_clean['DueDate'] = df_clean['DueDate'].fillna(df_clean['OrderDate'] + pd.Timedelta(days=30))
+
+        # PaidDate: if missing, try InvoiceDate then DueDate then OrderDate + 30
+        if 'PaidDate' in df_clean.columns:
+            if 'InvoiceDate' in df_clean.columns:
+                df_clean['PaidDate'] = df_clean['PaidDate'].fillna(df_clean['InvoiceDate'])
+            if 'DueDate' in df_clean.columns:
+                df_clean['PaidDate'] = df_clean['PaidDate'].fillna(df_clean['DueDate'])
+            if 'OrderDate' in df_clean.columns:
+                df_clean['PaidDate'] = df_clean['PaidDate'].fillna(df_clean['OrderDate'] + pd.Timedelta(days=30))
+
+        # ShippedDate: if missing, fallback to OrderDate (assume 0 days delivery when unknown)
+        if 'ShippedDate' in df_clean.columns and 'OrderDate' in df_clean.columns:
+            df_clean['ShippedDate'] = df_clean['ShippedDate'].fillna(df_clean['OrderDate'])
+
+        # Recompute DeliveryDays after imputations
+        if 'ShippedDate' in df_clean.columns and 'OrderDate' in df_clean.columns:
+            df_clean['DeliveryDays'] = (df_clean['ShippedDate'] - df_clean['OrderDate']).dt.days
         
         print(f"  • Dates converties")
         print(f"  • Composantes temporelles ajoutées")

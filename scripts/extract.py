@@ -366,6 +366,12 @@ class NorthwindExtractor:
                 AvgPrice=('ListPrice', 'mean')
             ).reset_index()
 
+            # Normaliser le type de SupplierID (les IDs proviennent de splitting 'Supplier IDs' string)
+            # Convertir en numérique, supprimer les lignes invalides, puis cast en int
+            agg_df['SupplierID'] = pd.to_numeric(agg_df['SupplierID'], errors='coerce')
+            agg_df = agg_df.dropna(subset=['SupplierID'])
+            agg_df['SupplierID'] = agg_df['SupplierID'].astype(int)
+
             # Fusionner avec les informations fournisseur
             supplier_analysis = suppliers_clean.merge(
                 agg_df,
