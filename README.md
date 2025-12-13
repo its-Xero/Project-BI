@@ -5,7 +5,7 @@
 Ce projet présente une solution complète de Business Intelligence (BI) basée sur la célèbre base de données Northwind. Il démontre toutes les étapes d'un pipeline ETL moderne et la création d'un tableau de bord analytique interactif.
 
 ### Fonctionnalités principales :
-- ✅ Extraction des données depuis une base SQL (SQLite/SQL Server/Access)
+- ✅ Extraction des données depuis des fichiers Excel/CSV (ou depuis une base SQL si nécessaire)
 - ✅ Transformation et nettoyage des données avec Python/Pandas
 - ✅ Création de métriques analytiques et KPIs
 - ✅ Tableau de bord interactif avec visualisations dynamiques
@@ -19,22 +19,23 @@ Ce projet présente une solution complète de Business Intelligence (BI) basée 
 northwind-bi-project/
 │
 ├── data/
-│   ├── raw/                    # Données extraites brutes
-│   ├── processed/              # Données transformées
-│   └── northwind.db            # Base de données SQLite
+│   ├── raw/                    # Données sources (Excel/CSV)
+│   ├── processed/              # Données transformées (CSV) prêtes pour le reporting
+│   └── northwind_analytics.db  # Base analytique SQLite (générée par scripts/load.py)
 │
 ├── scripts/
-│   ├── 01_extract.py          # Extraction (ETL - Extract)
-│   ├── 02_transform.py        # Transformation (ETL - Transform)
-│   ├── 03_load.py             # Chargement (ETL - Load)
-│   └── 04_dashboard.py        # Dashboard interactif
+│   ├── etl_main.py             # Orchestrateur ETL (extrait + transforme + charge)
+│   ├── extract.py              # Extraction (depuis Excel/CSV -> data/raw/)
+│   ├── transform.py            # Nettoyage / enrichissement -> data/processed/
+│   ├── load.py                 # Chargement des CSV transformés vers SQLite + rapports
+│   └── dashboard.py            # Dashboard interactif (Dash + Plotly)
 │
-├── figures/                    # Graphiques générés
-├── reports/                    # Rapports PDF
+├── figures/                    # Graphiques générés (statics)
+├── reports/                    # Rapports Excel/PDF générés
 ├── notebooks/                  # Notebooks Jupyter d'analyse
 │
 ├── README.md                   # Ce fichier
-└── requirements.txt            # Dépendances Python
+└── requirements_windows.txt    # Dépendances Python (Windows)
 ```
 
 ---
@@ -62,26 +63,19 @@ venv\Scripts\activate
 # Linux/Mac:
 source venv/bin/activate
 
-# Installer les dépendances
-pip install -r requirements.txt
+# Installer les dépendances (Windows)
+pip install -r requirements_windows.txt
 ```
 
-### 3. Configuration de la base de données
+### 3. Source des données
 
-**Option A : Utiliser SQLite (recommandé pour débuter)**
-- Téléchargez la base Northwind SQLite depuis : https://github.com/jpwhite3/northwind-SQLite3
-- Placez le fichier `northwind.db` dans le dossier `data/`
+Ce projet supporte deux sources principales :
 
-**Option B : SQL Server**
-- Modifiez la connexion dans `01_extract.py` pour utiliser pyodbc
-- Exemple de chaîne de connexion :
-```python
-conn_str = 'DRIVER={SQL Server};SERVER=localhost;DATABASE=Northwind;Trusted_Connection=yes;'
-```
+- Fichiers Excel originaux (ex. Customers.xlsx, Orders.xlsx, Products.xlsx) placés dans `data/`.
+- Fichiers CSV préexistants dans `data/raw/` (le script `extract.py` peut prendre des CSVs comme entrée).
 
-**Option C : Microsoft Access**
-- Installez le driver ODBC Access
-- Modifiez la connexion pour pointer vers votre fichier .mdb/.accdb
+Placez vos fichiers Excel/CSV dans `data/` (ou `data/raw/`) avant de lancer l'extraction. Le script `load.py` créera ensuite la base SQLite analytique `data/northwind_analytics.db`.
+
 
 ---
 
@@ -90,23 +84,17 @@ conn_str = 'DRIVER={SQL Server};SERVER=localhost;DATABASE=Northwind;Trusted_Conn
 ### Étape 1 : Extraction des données
 
 ```bash
-python scripts/01_extract.py
+python scripts/extract.py
 ```
 
 **Ce que fait ce script :**
-- Se connecte à la base Northwind
-- Extrait toutes les tables principales (Customers, Orders, Products, etc.)
-- Crée une vue consolidée pour l'analyse des ventes
-- Sauvegarde les données en CSV dans `data/raw/`
+- Charge les fichiers Excel depuis `data/` (ou lit CSVs déjà présents dans `data/raw/`).
+- Génère des fichiers CSV dans `data/raw/` (customers.csv, orders.csv, sales_analysis_complete.csv, etc.).
 
 **Résultat attendu :**
 ```
-✓ Connexion établie à data/northwind.db
-✓ Table Customers: 91 lignes extraites
-✓ Table Orders: 830 lignes extraites
-✓ Table Products: 77 lignes extraites
-...
-📁 Fichiers créés : customers.csv, orders.csv, sales_analysis.csv, etc.
+✓ Chargement des fichiers source depuis data/
+✓ Fichiers convertis / exportés vers data/raw/ (customers.csv, orders.csv, sales_analysis_complete.csv, ...)
 ```
 
 ---
@@ -114,16 +102,14 @@ python scripts/01_extract.py
 ### Étape 2 : Transformation des données
 
 ```bash
-python scripts/02_transform.py
+python scripts/transform.py
 ```
 
 **Ce que fait ce script :**
-- Charge les données brutes
-- Nettoie les valeurs manquantes
-- Enrichit avec des colonnes calculées (Year, Month, Quarter, DeliveryDays)
-- Crée des agrégations (ventes mensuelles, par catégorie, par pays, etc.)
-- Calcule les KPIs principaux
-- Sauvegarde dans `data/processed/`
+- Charge `data/raw/sales_analysis_complete.csv` (ou `sales_analysis.csv` en fallback).
+- Nettoie, enrichit et calcule des composantes temporelles.
+- Calcule des agrégations (monthly_sales, category_sales, top_products, country_sales, employee_sales, etc.).
+- Sauvegarde les outputs CSV dans `data/processed/` (sales_clean.csv, kpis.csv, monthly_sales.csv, ...).
 
 **Résultat attendu :**
 ```
@@ -145,26 +131,34 @@ python scripts/02_transform.py
 
 ---
 
-### Étape 3 : Lancement du Dashboard
+### Étape 3 : Chargement et Dashboard
+
+Vous pouvez charger les données transformées dans une base SQLite et générer un rapport, puis démarrer le dashboard.
 
 ```bash
-python scripts/04_dashboard.py
+# Lancer le chargement dans SQLite et création de rapports
+python scripts/load.py
+
+# (Optionnel) Orchestrer tout le pipeline (extract -> transform -> load)
+python scripts/etl_main.py
+
+# Lancer le dashboard (port 8080 par défaut)
+python scripts/dashboard.py
 ```
 
-**Ce que fait ce script :**
-- Charge toutes les données transformées
-- Crée des visualisations interactives
-- Lance un serveur web local
-- Affiche le dashboard dans votre navigateur
+**Ce que fait ces scripts :**
+- `load.py`: charge les CSV transformés dans `data/northwind_analytics.db`, crée des vues et index, et génère un rapport Excel (`reports/rapport_northwind.xlsx`).
+- `etl_main.py`: orchestre l'extraction, la transformation et le chargement en séquence.
+- `dashboard.py`: démarre un serveur Dash et sert le dashboard interactif sur `http://localhost:8080`.
 
 **Résultat attendu :**
 ```
 🚀 Lancement du dashboard...
-📡 Serveur démarré sur http://localhost:8050
+📡 Serveur démarré sur http://localhost:8080
 💡 Ouvrez votre navigateur à cette adresse
 ```
 
-Ouvrez votre navigateur et allez à : **http://localhost:8050**
+Ouvrez votre navigateur et allez à : **http://localhost:8080**
 
 ---
 
@@ -288,20 +282,23 @@ Ce projet permet de répondre à des questions d'affaires telles que :
 
 ### Problème : Erreur de connexion à la base
 
-**Solution :** Vérifiez que le fichier `northwind.db` existe dans `data/` et que le chemin est correct.
+**Solution :**
+- Si vous utilisez la base SQLite originale Northwind, vérifiez que le fichier `northwind.db` est présent dans `data/`.
+- Si vous utilisez le pipeline ETL, vérifiez que `data/northwind_analytics.db` (généré par `load.py`) existe ou exécutez `python scripts/load.py` pour le créer.
+- Assurez-vous que les chemins d'accès aux fichiers sont corrects et que vous avez les droits en lecture/écriture.
 
 ### Problème : Module introuvable
 
 **Solution :** Assurez-vous que l'environnement virtuel est activé et que les dépendances sont installées :
 ```bash
-pip install -r requirements.txt
+pip install -r requirements_windows.txt
 ```
 
 ### Problème : Le dashboard ne s'affiche pas
 
-**Solution :** Vérifiez que le port 8050 n'est pas déjà utilisé. Changez le port si nécessaire :
+**Solution :** Vérifiez que le port 8080 n'est pas déjà utilisé. Changez le port si nécessaire :
 ```python
-dashboard.run(debug=True, port=8051)
+dashboard.run(debug=True, port=8081)
 ```
 
 ---
