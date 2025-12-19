@@ -109,7 +109,10 @@ python scripts/extract.py --source sql --db-conn "sqlite:///data/northwind.db"
 
 **Ce que fait ce script :**
 - Charge les fichiers Excel depuis `data/` (ou lit CSVs déjà présents dans `data/raw/`).
+- Si le fichier `Order Details` est absent, le script génère des lignes de commande **simulées** pour chaque commande. La simulation est **déterministe** (seedée par `OrderID`) et s'appuie sur la liste des produits dans `Products.xlsx`, ce qui permet d'obtenir des métriques stables (ex: **Panier moyen**) entre les exécutions.
 - Génère des fichiers CSV dans `data/raw/` (customers.csv, orders.csv, sales_analysis_complete.csv, etc.).
+
+> 💡 Option : si vous préférez que la simulation soit persistée (fichier `data/raw/order_details_simulated.csv`) pour inspection ou réutilisation, je peux ajouter un paramètre pour enregistrer la simulation au lieu de la régénérer à chaque extraction.
 
 **Résultat attendu :**
 ```
@@ -128,8 +131,11 @@ python scripts/transform.py
 **Ce que fait ce script :**
 - Charge `data/raw/sales_analysis_complete.csv` (ou `sales_analysis.csv` en fallback).
 - Nettoie, enrichit et calcule des composantes temporelles.
+- Crée et conserve un indicateur `WasShipped` (basé sur la présence initiale de `ShippedDate` **avant** tout remplissage/post-traitement) pour permettre au dashboard d'identifier correctement les commandes non-livrées.
 - Calcule des agrégations (monthly_sales, category_sales, top_products, country_sales, employee_sales, etc.).
 - Sauvegarde les outputs CSV dans `data/processed/` (sales_clean.csv, kpis.csv, monthly_sales.csv, ...).
+
+> ⚠️ Remarque : Si vous mettez à jour la logique d'extraction (par ex. simulation des détails de commande), **re-lancez** `python scripts/transform.py` pour régénérer `sales_clean.csv` afin que les nouveaux flags et imputations soient appliqués.
 
 **Résultat attendu :**
 ```
@@ -320,6 +326,14 @@ pip install -r requirements_windows.txt
 ```python
 dashboard.run(debug=True, port=8081)
 ```
+
+### Problème : Le "Panier moyen" change d'une exécution à l'autre
+
+**Symptôme :** La métrique *AvgOrderValue* varie significativement après chaque exécution de l'ETL (extract/transform/load).
+
+**Cause :** Lorsqu'il n'y a pas de table `Order Details`, le `scripts/extract.py` génère des lignes de commande simulées. Avant la dernière mise à jour, la simulation utilisait un tirage réellement aléatoire, d'où des variations à chaque exécution.
+
+**Solution :** Le comportement a été rendu **déterministe** : la simulation est maintenant seedée par `OrderID` et utilise la liste de produits de `Products.xlsx`, ce qui stabilise la valeur de *Panier moyen* entre exécutions. Si vous souhaitez inspecter ou persister les résultats de la simulation (fichier `data/raw/order_details_simulated.csv`), demandez-moi et j'ajouterai l'option de persistance.
 
 ---
 
