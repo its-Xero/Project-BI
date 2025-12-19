@@ -296,22 +296,29 @@ class NorthwindExtractor:
             )
             
             # 10. Ajouter des produits simulés (car nous n'avons pas Order Details)
-            print("  10. Simulation des lignes de commande...")
+            print("  10. Simulation des lignes de commande (déterministe, produits depuis Products.xlsx)...")
             
-            # Pour chaque commande, créer plusieurs lignes de produit
-            # En production, vous auriez un fichier Order Details.xlsx
-            product_sample = products_clean[['ProductID', 'ProductName', 'CategoryName', 'UnitPrice']].head(5)
-            
-            # Créer des lignes de commande simulées
+            # Utiliser l'ensemble complet des produits extraits depuis l'Excel original (Products.xlsx)
+            product_list = products_clean[['ProductID', 'ProductName', 'CategoryName', 'UnitPrice']].to_dict('records')
+            if not product_list:
+                print('  ⚠ Aucun produit disponible pour la simulation')
+
+            # Créer des lignes de commande simulées (déterministes par OrderID)
             order_details_list = []
+            import random
             for idx, order in sales_analysis.iterrows():
-                # Sélectionner 1-3 produits aléatoires pour chaque commande
-                import random
-                n_products = random.randint(1, 3)
+                # Seed deterministic: prefer numeric OrderID, fallback to hashed string
+                try:
+                    seed = int(order['OrderID'])
+                except Exception:
+                    seed = abs(hash(str(order['OrderID']))) % (2**32)
+                rng = random.Random(seed)
+
+                n_products = rng.randint(1, 3)
                 for i in range(n_products):
-                    product = product_sample.iloc[i % len(product_sample)]
-                    quantity = random.randint(1, 10)
-                    discount = random.choice([0, 0.05, 0.1, 0.15])
+                    product = product_list[rng.randrange(len(product_list))]
+                    quantity = rng.randint(1, 10)
+                    discount = rng.choice([0, 0.05, 0.1, 0.15])
                     
                     order_detail = {
                         'OrderID': order['OrderID'],

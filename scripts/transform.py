@@ -63,6 +63,13 @@ class NorthwindTransformer:
         # 3. Calculer le délai de livraison (si les dates existent)
         if 'ShippedDate' in df_clean.columns and 'OrderDate' in df_clean.columns:
             df_clean['DeliveryDays'] = (df_clean['ShippedDate'] - df_clean['OrderDate']).dt.days
+
+        # Conserver un indicateur 'WasShipped' basé sur la présence initiale de ShippedDate
+        # IMPORTANT: nous définissons ce flag AVANT d'appliquer les remplissages ultérieurs
+        if 'ShippedDate' in df_clean.columns:
+            df_clean['WasShipped'] = df_clean['ShippedDate'].notna()
+        else:
+            df_clean['WasShipped'] = False
         
         # 4. Créer des catégories de montant (si LineTotal existe)
         if 'LineTotal' in df_clean.columns:

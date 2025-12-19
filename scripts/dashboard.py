@@ -331,7 +331,7 @@ class NorthwindDashboard:
                     ], style={'width': '50%'}),
                     
                     html.Div([
-                        dcc.Graph(figure=self.plot_country_sales())
+                        dcc.Graph(figure=self.plot_delivery_3d())
                     ], style={'width': '50%'}),
                 ], style={'display': 'flex', 'gap': '20px', 'marginBottom': '30px'}),
             ]),
@@ -499,6 +499,155 @@ class NorthwindDashboard:
         )
         
         return fig
+
+    def plot_delivery_3d(self):
+        """3D vertical bars: X=OrderDate, Y=EmployeeName (categorical), Z=Orders count.
+
+        Shows two series (Delivered, Not Delivered). Each vertical bar is drawn as a thin line from Z=0 to Z=Orders
+        and a marker at the bar top. Hover shows sample customers involved for that point.
+        """
+        if not hasattr(self, 'sales') or self.sales.empty:
+            return go.Figure()
+
+        df = self.sales.copy()
+
+        # Ensure date column
+        if 'OrderDate' in df.columns:
+            df['OrderDate'] = pd.to_datetime(df['OrderDate'], errors='coerce')
+        else:
+            # fallback to Year/Month (first day of month)
+            if 'OrderYear' in df.columns and 'OrderMonth' in df.columns:
+                df['OrderDate'] = pd.to_datetime(df['OrderYear'].astype(str) + '-' + df['OrderMonth'].astype(str) + '-01', errors='coerce')
+            else:
+                df['OrderDate'] = pd.to_datetime(df.get('OrderDate', None), errors='coerce')
+
+        # Delivered flag: prefer explicit 'WasShipped' set during transform; otherwise fall back to ShippedDate
+        if 'WasShipped' in df.columns:
+            # 'WasShipped' was computed BEFORE any ShippedDate imputations in the transformer
+            df['Delivered'] = df['WasShipped'].astype(bool)
+        else:
+            df['Delivered'] = False
+            if 'ShippedDate' in df.columns:
+                df['ShippedDate'] = pd.to_datetime(df['ShippedDate'], errors='coerce')
+                df.loc[df['ShippedDate'].notna(), 'Delivered'] = True
+
+        # StatusName can override and mark as delivered when applicable
+        if 'StatusName' in df.columns:
+            delivered_status = df['StatusName'].astype(str).str.lower().isin(['shipped', 'delivered', 'closed'])
+            df.loc[delivered_status, 'Delivered'] = True
+
+        # Ensure names exist
+        df['EmployeeName'] = df.get('EmployeeName', df.get('Employee', 'Unknown'))
+        df['CustomerName'] = df.get('CustomerName', df.get('CustomerCompany', df.get('Customer', 'Unknown')))
+
+        # Aggregate by date + employee + delivered flag
+        if 'OrderID' in df.columns:
+            agg = df.groupby([df['OrderDate'].dt.date, 'EmployeeName', 'Delivered']).agg(
+                Orders=('OrderID', 'nunique'),
+                Customers=('CustomerName', lambda s: ', '.join(sorted(s.dropna().unique())[:3]))
+            ).reset_index()
+        else:
+            agg = df.groupby([df['OrderDate'].dt.date, 'EmployeeName', 'Delivered']).agg(
+                Orders=('CustomerName', 'size'),
+                Customers=('CustomerName', lambda s: ', '.join(sorted(s.dropna().unique())[:3]))
+            ).reset_index()
+
+        if agg.empty:
+            return go.Figure()
+
+        # Map employees to numeric positions
+        employees = sorted(agg['EmployeeName'].unique())
+        emp_map = {e: i for i, e in enumerate(employees)}
+        agg['y'] = agg['EmployeeName'].map(emp_map)
+
+        fig = go.Figure()
+
+        # Build traces per delivered flag; draw vertical line segments and marker at top
+        for delivered_flag, name, color in [(True, 'Delivered', '#2ecc71'), (False, 'Not Delivered', '#e74c3c')]:
+            sub = agg[agg['Delivered'] == delivered_flag].sort_values(['OrderDate', 'EmployeeName'])
+            if sub.empty:
+                continue
+
+            # Prepare line segments (x,x,None), (y,y,None), (0,orders,None)
+            x_lines, y_lines, z_lines = [], [], []
+            x_marks, y_marks, z_marks, texts = [], [], [], []
+
+            for _, row in sub.iterrows():
+                date_val = pd.to_datetime(row['OrderDate'])
+                y_val = row['y']
+                orders = int(row['Orders'])
+                customers_sample = row.get('Customers', '')
+
+                x_lines.extend([date_val, date_val, None])
+                y_lines.extend([y_val, y_val, None])
+                z_lines.extend([0, orders, None])
+
+                x_marks.append(date_val)
+                y_marks.append(y_val)
+                z_marks.append(orders)
+                texts.append(f"Date: {date_val.date()}<br>Employee: {row['EmployeeName']}<br>Orders: {orders}<br>Customers: {customers_sample}")
+
+            # Thin vertical lines
+            fig.add_trace(go.Scatter3d(
+                x=x_lines,
+                y=y_lines,
+                z=z_lines,
+                mode='lines',
+                line=dict(color=color, width=6),
+                hoverinfo='none',
+                showlegend=False
+            ))
+
+            # Markers at tops
+            customdata = list(zip(sub['EmployeeName'].values, sub['Customers'].values))
+            # Use z as orders count
+            fig.add_trace(go.Scatter3d(
+                x=x_marks,
+                y=y_marks,
+                z=z_marks,
+                mode='markers',
+                marker=dict(size=[max(6, min(6 + int(v), 30)) for v in z_marks], color=color, opacity=0.9),
+                name=name,
+                customdata=customdata,
+                hovertemplate='<b>%{x|%Y-%m-%d}</b><br>Employee: %{customdata[0]}<br>Orders: %{z}<br>Customers: %{customdata[1]}<extra></extra>'
+            ))
+
+        # Add a small annotation when there are no non-delivered orders
+        total_delivered = int(agg[agg['Delivered'] == True]['Orders'].sum()) if 'Delivered' in agg.columns else 0
+        total_not_delivered = int(agg[agg['Delivered'] == False]['Orders'].sum()) if 'Delivered' in agg.columns else 0
+
+        if total_not_delivered == 0:
+            # Suggest re-running transform to preserve WasShipped if you expect non-delivered orders
+            note = "No non-delivered orders found. If you expect undelivered orders, re-run `scripts/transform.py` to update 'WasShipped' flag."
+            fig.add_annotation(xref='paper', yref='paper', x=0.02, y=0.95,
+                               text=note, showarrow=False, align='left', bgcolor='lightyellow', bordercolor='gray')
+
+        fig.update_layout(
+            title='📦 Commandes livrées vs non-livrées (3D - Orders count)',
+            template='plotly_white',
+            height=600,
+            scene=dict(
+                xaxis=dict(title='Order Date', type='date'),
+                yaxis=dict(title='Employee', tickmode='array', tickvals=list(emp_map.values()), ticktext=list(emp_map.keys())),
+                zaxis=dict(title='Orders', type='linear')
+            ),
+            legend=dict(x=0.85, y=0.95)
+        )
+
+        return fig
+        fig.update_layout(
+            title='📦 Commandes livrées vs non-livrées (3D)',
+            template='plotly_white',
+            height=600,
+            scene=dict(
+                xaxis=dict(title='Order Date', type='date'),
+                yaxis=dict(title='Employee', tickmode='array', tickvals=list(emp_map.values()), ticktext=list(emp_map.keys())),
+                zaxis=dict(title='Customer', tickmode='array', tickvals=list(cust_map.values()), ticktext=list(cust_map.keys()))
+            ),
+            legend=dict(x=0.85, y=0.95)
+        )
+
+        return fig
     
     def plot_employee_performance(self):
         """Performance des employés"""
@@ -560,7 +709,7 @@ class NorthwindDashboard:
                 ], style={'width': '50%'}),
                 
                 html.Div([
-                    dcc.Graph(figure=self.plot_country_sales())
+                    dcc.Graph(figure=self.plot_delivery_3d())
                 ], style={'width': '50%'}),
             ], style={'display': 'flex', 'gap': '20px', 'marginBottom': '30px'}),
             
@@ -586,7 +735,7 @@ class NorthwindDashboard:
             'monthly_sales.png': self.plot_monthly_sales(),
             'category_distribution.png': self.plot_category_distribution(),
             'top_products.png': self.plot_top_products(),
-            'country_sales.png': self.plot_country_sales(),
+            'delivery_3d.png': self.plot_delivery_3d(),
             'employee_performance.png': self.plot_employee_performance()
         }
         
