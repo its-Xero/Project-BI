@@ -20,10 +20,10 @@ class NorthwindLoader:
         """Crée ou se connecte à la base de données analytique"""
         try:
             self.conn = sqlite3.connect(self.output_db)
-            print(f"✓ Connexion établie à {self.output_db}")
+            print(f"[OK] Connexion etablie a {self.output_db}")
             return True
         except Exception as e:
-            print(f"✗ Erreur de connexion: {e}")
+            print(f"[ERR] Erreur de connexion: {e}")
             return False
     
     def load_to_database(self, df, table_name, if_exists='replace'):
@@ -36,15 +36,15 @@ class NorthwindLoader:
         """
         try:
             df.to_sql(table_name, self.conn, if_exists=if_exists, index=False)
-            print(f"✓ Table {table_name}: {len(df)} lignes chargées")
+            print(f"[OK] Table {table_name}: {len(df)} lignes chargees")
             return True
         except Exception as e:
-            print(f"✗ Erreur chargement {table_name}: {e}")
+            print(f"[ERR] Erreur chargement {table_name}: {e}")
             return False
     
     def create_indexes(self):
         """Crée des index pour optimiser les requêtes"""
-        print("\n🔧 Création des index...")
+        print("\n[INFO] Creation des index...")
         
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_sales_date ON sales_clean(OrderDate)",
@@ -57,15 +57,15 @@ class NorthwindLoader:
         for idx_query in indexes:
             try:
                 cursor.execute(idx_query)
-                print(f"  ✓ Index créé")
+                print(f"  [OK] Index cree")
             except Exception as e:
-                print(f"  ✗ Erreur: {e}")
+                print(f"  [ERR] Erreur: {e}")
         
         self.conn.commit()
     
     def create_views(self):
         """Crée des vues SQL pour faciliter l'analyse"""
-        print("\n📊 Création des vues SQL...")
+        print("\n[INFO] Creation des vues SQL...")
         
         views = {
             'v_sales_summary': """
@@ -116,15 +116,15 @@ class NorthwindLoader:
         for view_name, view_query in views.items():
             try:
                 cursor.execute(view_query)
-                print(f"  ✓ Vue {view_name} créée")
+                print(f"  [OK] Vue {view_name} creee")
             except Exception as e:
-                print(f"  ✗ Erreur {view_name}: {e}")
+                print(f"  [ERR] Erreur {view_name}: {e}")
         
         self.conn.commit()
     
     def load_all_data(self):
         """Charge toutes les données transformées"""
-        print("\n📥 Chargement des données transformées...\n")
+        print("\n[INFO] Chargement des donnees transformees...\n")
         
         # Liste des fichiers à charger
         files_to_load = {
@@ -148,15 +148,15 @@ class NorthwindLoader:
                     self.load_to_database(df, table_name)
                     loaded_count += 1
                 except Exception as e:
-                    print(f"✗ Erreur chargement {filename}: {e}")
+                    print(f"[ERR] Erreur chargement {filename}: {e}")
             else:
-                print(f"⚠ Fichier non trouvé: {filename}")
+                print(f"[WARN] Fichier non trouve: {filename}")
         
         return loaded_count
     
     def generate_excel_report(self):
         """Génère un rapport Excel avec plusieurs onglets"""
-        print("\n📊 Génération du rapport Excel...")
+        print("\n[INFO] Generation du rapport Excel...")
         
         output_file = 'reports/rapport_northwind.xlsx'
         os.makedirs('reports', exist_ok=True)
@@ -178,18 +178,18 @@ class NorthwindLoader:
                     if os.path.exists(file_path):
                         df = pd.read_csv(file_path)
                         df.to_excel(writer, sheet_name=sheet_name, index=False)
-                        print(f"  ✓ Onglet '{sheet_name}' ajouté")
+                        print(f"  [OK] Onglet '{sheet_name}' ajoute")
             
-            print(f"\n✓ Rapport Excel généré: {output_file}")
+            print(f"\n[OK] Rapport Excel genere: {output_file}")
             return True
             
         except Exception as e:
-            print(f"✗ Erreur génération Excel: {e}")
+            print(f"[ERR] Erreur generation Excel: {e}")
             return False
     
     def verify_data_quality(self):
         """Vérifie la qualité des données chargées"""
-        print("\n🔍 Vérification de la qualité des données...\n")
+        print("\n[INFO] Verification de la qualite des donnees...\n")
         
         # Compter les enregistrements par table
         cursor = self.conn.cursor()
@@ -201,7 +201,7 @@ class NorthwindLoader:
             table_name = table[0]
             cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
             count = cursor.fetchone()[0]
-            print(f"  • {table_name}: {count:,} lignes")
+            print(f"  - {table_name}: {count:,} lignes")
         
         # Vérifier les valeurs nulles dans la table principale
         cursor.execute("SELECT * FROM sales_clean LIMIT 1")
@@ -217,9 +217,9 @@ class NorthwindLoader:
         
         if null_counts:
             for col, count in null_counts:
-                print(f"  ⚠ {col}: {count} valeurs nulles")
+                print(f"  [WARN] {col}: {count} valeurs nulles")
         else:
-            print("  ✓ Aucune valeur manquante")
+            print("  [OK] Aucune valeur manquante")
     
     def generate_summary_report(self):
         """Génère un rapport de synthèse"""
@@ -233,15 +233,22 @@ class NorthwindLoader:
         # KPIs depuis la table
         cursor.execute("SELECT * FROM kpis")
         kpi = cursor.fetchone()
-        col_names = [description[0] for description in cursor.description]
-        kpi_dict = dict(zip(col_names, kpi))
+        if kpi is None:
+            print("\n[WARN] Aucun KPI disponible (table 'kpis' vide).")
+            kpi_dict = {}
+        else:
+            col_names = [description[0] for description in cursor.description]
+            kpi_dict = dict(zip(col_names, kpi))
         
-        print(f"\n💼 Indicateurs Clés de Performance:")
-        print(f"  • Revenu Total: ${kpi_dict['TotalRevenue']:,.2f}")
-        print(f"  • Nombre de Commandes: {int(kpi_dict['TotalOrders']):,}")
-        print(f"  • Nombre de Clients: {int(kpi_dict['TotalCustomers'])}")
-        print(f"  • Panier Moyen: ${kpi_dict['AvgOrderValue']:,.2f}")
-        print(f"  • Délai Livraison Moyen: {kpi_dict['AvgDeliveryDays']:.1f} jours")
+        print(f"\nIndicateurs Cles de Performance:")
+        if kpi:
+            print(f"  - Revenu Total: ${kpi_dict.get('TotalRevenue', 0):,.2f}")
+            print(f"  - Nombre de Commandes: {int(kpi_dict.get('TotalOrders', 0)):,}")
+            print(f"  - Nombre de Clients: {int(kpi_dict.get('TotalCustomers', 0))}")
+            print(f"  - Panier Moyen: ${kpi_dict.get('AvgOrderValue', 0):,.2f}")
+            print(f"  - Délai Livraison Moyen: {kpi_dict.get('AvgDeliveryDays', 0):.1f} jours")
+        else:
+            print("  - Aucune information KPI disponible (re-executez la transformation)")
         
         # Top catégorie
         cursor.execute("""
@@ -251,7 +258,11 @@ class NorthwindLoader:
             LIMIT 1
         """)
         top_cat = cursor.fetchone()
-        print(f"\n🏆 Catégorie #1: {top_cat[0]} (${top_cat[1]:,.2f})")
+        if top_cat is None:
+            print("\n[WARN] Pas de donnees pour 'category_sales' (aucune categorie avec ventes).")
+        else:
+            print(f"\nCategorie #1: {top_cat[0]} (${top_cat[1]:,.2f})")
+        
         
         # Top pays
         cursor.execute("""
@@ -261,7 +272,10 @@ class NorthwindLoader:
             LIMIT 1
         """)
         top_country = cursor.fetchone()
-        print(f"🌍 Pays #1: {top_country[0]} (${top_country[1]:,.2f})")
+        if top_country is None:
+            print("Pays #1: Aucune donnée disponible pour 'country_sales'.")
+        else:
+            print(f"Pays #1: {top_country[0]} (${top_country[1]:,.2f})")
         
         # Meilleur employé
         cursor.execute("""
@@ -271,21 +285,24 @@ class NorthwindLoader:
             LIMIT 1
         """)
         top_employee = cursor.fetchone()
-        print(f"👔 Meilleur Vendeur: {top_employee[0]} (${top_employee[1]:,.2f})")
+        if top_employee is None:
+            print("Meilleur Vendeur: Aucune donnée disponible pour 'employee_sales'.")
+        else:
+            print(f"Meilleur Vendeur: {top_employee[0]} (${top_employee[1]:,.2f})")
         
-        print(f"\n📅 Date de chargement: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"💾 Base de données: {self.output_db}")
+        print(f"\nDate de chargement: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Base de donnees: {self.output_db}")
         print("="*60)
     
     def close(self):
         """Ferme la connexion"""
         if self.conn:
             self.conn.close()
-            print("\n✓ Connexion fermée")
+            print("\n[OK] Connexion fermee")
     
     def execute_full_load(self):
         """Exécute le processus complet de chargement"""
-        print("\n🚀 DÉBUT DU CHARGEMENT\n")
+        print("\n[START] DEBUT DU CHARGEMENT\n")
         
         # 1. Connexion
         if not self.connect():
@@ -293,7 +310,7 @@ class NorthwindLoader:
         
         # 2. Charger les données
         loaded = self.load_all_data()
-        print(f"\n✓ {loaded} tables chargées")
+        print(f"\n[OK] {loaded} tables chargees")
         
         # 3. Créer les index
         self.create_indexes()
@@ -313,7 +330,7 @@ class NorthwindLoader:
         # 8. Fermer
         self.close()
         
-        print("\n✅ CHARGEMENT TERMINÉ AVEC SUCCÈS\n")
+        print("\n[OK] CHARGEMENT TERMINE AVEC SUCCES\n")
         return True
 
 
