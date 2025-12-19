@@ -69,10 +69,26 @@ pip install -r requirements_windows.txt
 
 ### 3. Source des données
 
-Ce projet supporte deux sources principales :
+Ce projet supporte plusieurs sources principales :
 
-- Fichiers Excel originaux (ex. Customers.xlsx, Orders.xlsx, Products.xlsx) placés dans `data/`.
-- Fichiers CSV préexistants dans `data/raw/` (le script `extract.py` peut prendre des CSVs comme entrée).
+- **Fichiers Excel** originaux (ex. `Customers.xlsx`, `Orders.xlsx`, `Products.xlsx`) placés dans `data/`.
+- **Fichiers CSV** préexistants dans `data/raw/` (le script `extract.py` peut prendre des CSVs comme entrée).
+- **Base SQL** : tables ayant la même structure que les fichiers Excel. Pour charger depuis une base SQL, utilisez l'option `--source sql` et fournissez une SQLAlchemy connection string via `--db-conn`.
+
+Exemples :
+
+```bash
+# Extraction depuis une base SQLite
+python scripts/extract.py --source sql --db-conn "sqlite:///data/northwind.db"
+
+# Orchestrer tout le pipeline depuis une base SQL
+python scripts/etl_main.py --source sql --db-conn "sqlite:///data/northwind.db"
+
+# Exemple SQL Server (ODBC) :
+python scripts/extract.py --source sql --db-conn "mssql+pyodbc://user:pass@server/db?driver=ODBC+Driver+17+for+SQL+Server"
+```
+
+> 💡 Si les noms de tables dans la base diffèrent des noms attendus (ex: `customers`, `orders`), vous pouvez adapter le mapping `db_table_map` dans `scripts/extract.py` pour faire correspondre les clés logiques aux noms de table réels.
 
 Placez vos fichiers Excel/CSV dans `data/` (ou `data/raw/`) avant de lancer l'extraction. Le script `load.py` créera ensuite la base SQLite analytique `data/northwind_analytics.db`.
 
@@ -84,7 +100,11 @@ Placez vos fichiers Excel/CSV dans `data/` (ou `data/raw/`) avant de lancer l'ex
 ### Étape 1 : Extraction des données
 
 ```bash
+# Extraction depuis les fichiers Excel (défaut)
 python scripts/extract.py
+
+# Extraction depuis une base SQL (ex: SQLite)
+python scripts/extract.py --source sql --db-conn "sqlite:///data/northwind.db"
 ```
 
 **Ce que fait ce script :**

@@ -7,25 +7,92 @@ import pandas as pd
 import os
 from datetime import datetime
 import glob
+try:
+    from sqlalchemy import create_engine
+except Exception:
+    create_engine = None  # sqlalchemy may be optional in some environments
 
 class NorthwindExtractor:
-    """Classe pour extraire TOUTES les données de Northwind depuis Excel"""
+    """Classe pour extraire TOUTES les données de Northwind depuis Excel ou depuis une base SQL
+
+    La source peut être choisie via le paramètre `source` ("excel" ou "sql").
+    Lors de l'utilisation d'une base SQL, fournissez une SQLAlchemy connection string via `db_conn_string`.
+    """
     
-    def __init__(self, data_folder='data/'):
+    def __init__(self, data_folder='data/', source='excel', db_conn_string=None, db_table_map=None):
         """
         Initialise l'extracteur
         Args:
             data_folder: Dossier contenant les fichiers Excel
+            source: 'excel' (par défaut) ou 'sql'
+            db_conn_string: (optionnel) SQLAlchemy connection string si source='sql'
+            db_table_map: (optionnel) dict mapping keys (e.g. 'customers') to table names in the DB
         """
         self.data_folder = data_folder
         self.raw_data_path = 'data/raw/'
-        
+        self.source = str(source or 'excel').lower()
+        self.db_conn_string = db_conn_string
+        self.db_table_map = db_table_map or {}
+        self.db_engine = None
+
         # Créer les dossiers nécessaires
         os.makedirs(self.raw_data_path, exist_ok=True)
+
+        # Si source SQL, tenter la connexion
+        if self.source == 'sql':
+            if not self.db_conn_string:
+                print("⚠ Mode SQL demandé mais aucune connection string fournie. Voir paramètre db_conn_string.")
+            else:
+                self.connect_db()
+    
+    def connect_db(self):
+        """Crée une engine SQLAlchemy et teste la connexion"""
+        if create_engine is None:
+            print("✗ Le package 'sqlalchemy' n'est pas installé. Installez-le via 'pip install sqlalchemy' pour utiliser --source sql.")
+            self.db_engine = None
+            return
+        try:
+            print("🔗 Tentative de connexion à la base de données...")
+            self.db_engine = create_engine(self.db_conn_string)
+            # Test simple de connexion
+            with self.db_engine.connect() as conn:
+                conn.execute("SELECT 1")
+            print("✓ Connexion DB établie")
+        except Exception as e:
+            print(f"✗ Impossible de se connecter à la DB: {e}")
+            self.db_engine = None
+
+    def load_table_from_db(self, table_name):
+        """Charge une table depuis la base SQL en utilisant pandas.read_sql_query"""
+        if not self.db_engine:
+            print(f"✗ Aucune engine DB disponible pour charger la table: {table_name}")
+            return None
+        try:
+            query = f"SELECT * FROM {table_name}"
+            df = pd.read_sql_query(query, self.db_engine)
+            print(f"✓ Chargé depuis DB: {table_name} ({len(df)} lignes)")
+            return df
+        except Exception as e:
+            print(f"✗ Erreur chargement table DB {table_name}: {e}")
+            return None
     
     def load_excel_file(self, filename, sheet_name=None):
-        """Charge un fichier Excel"""
+        """Charge un fichier Excel ou (si source='sql') charge la table SQL correspondante.
+
+        Le paramètre `filename` peut être le nom de fichier Excel (ex: 'Customers.xlsx')
+        ou simplement la clé logique (ex: 'customers'). Lors du mode SQL la clé est normalisée
+        et utilisée pour résoudre le nom de la table via `db_table_map` si fourni.
+        """
         try:
+            # Mode SQL: charger depuis DB
+            if self.source == 'sql':
+                # Normaliser la clé (strip extension si présente)
+                base = os.path.splitext(filename)[0]
+                key = base.strip().lower().replace(' ', '_').replace('-', '_')
+                table_name = self.db_table_map.get(key, key)
+                return self.load_table_from_db(table_name)
+
+            # Mode Excel (par défaut)
             filepath = f"{self.data_folder}{filename}"
             if not os.path.exists(filepath):
                 print(f"⚠ Fichier non trouvé: {filename}")
@@ -42,8 +109,8 @@ class NorthwindExtractor:
             return None
     
     def extract_all_tables(self):
-        """Extrait TOUTES les tables principales depuis Excel"""
-        print("\n📊 Extraction de TOUTES les tables depuis Excel...")
+        """Extrait TOUTES les tables principales depuis la source configurée"""
+        print(f"\n📊 Extraction de TOUTES les tables depuis {self.source.upper()}...")
         
         # Liste complète de tous les fichiers Excel
         all_excel_files = {
@@ -570,12 +637,17 @@ class NorthwindExtractor:
         }
 
 
-def main():
-    """Fonction principale d'extraction"""
-    extractor = NorthwindExtractor()
+def main(source='excel', db_conn_string=None, db_table_map=None):
+    """Fonction principale d'extraction. Passer `source='sql'` et `db_conn_string` pour charger depuis une base."""
+    extractor = NorthwindExtractor(source=source, db_conn_string=db_conn_string, db_table_map=db_table_map)
     results = extractor.execute_complete_extraction()
     return results
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description="Extraction script: support 'excel' (default) or 'sql'.")
+    parser.add_argument("--source", choices=['excel','sql'], default='excel', help="Source des données: 'excel' or 'sql'")
+    parser.add_argument("--db-conn", dest="db_conn", default=None, help="SQLAlchemy connection string when using --source sql")
+    args = parser.parse_args()
+    main(source=args.source, db_conn_string=args.db_conn)
