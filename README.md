@@ -348,9 +348,8 @@ dashboard.run(debug=True, port=8081)
 
 ## 👤 Auteur
 
-**Votre Nom**  
+**Ragoub Anes**  
 Projet réalisé dans le cadre d'une formation en Business Intelligence  
-Date : Novembre 2025
 
 ---
 
