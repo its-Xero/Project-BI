@@ -3,7 +3,8 @@ pyodbc==5.0.1
 sqlalchemy==2.0.23
 
 # ETL et manipulation de données
-numpy==1.25.0
+# Pin numpy to a <2 release because matplotlib 3.8.x requires numpy<2 (avoids conflicts with numpy 2.x)
+numpy>=1.23.2,<2
 pandas==2.0.3
 
 # Visualisation
