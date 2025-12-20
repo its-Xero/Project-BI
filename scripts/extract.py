@@ -6,7 +6,6 @@ Inclut tous les fichiers: Clients, Produits, Commandes, Fournisseurs, etc.
 import pandas as pd
 import os
 from datetime import datetime
-import glob
 try:
     from sqlalchemy import create_engine
 except Exception:
