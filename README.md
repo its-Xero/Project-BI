@@ -16,7 +16,7 @@ Ce projet présente une solution complète de Business Intelligence (BI) basée 
 ## 📁 Structure du Projet
 
 ```
-northwind-bi-project/
+Project-BI/
 │
 ├── data/
 │   ├── raw/                    # Données sources (Excel/CSV)
