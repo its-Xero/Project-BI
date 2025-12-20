@@ -52,7 +52,7 @@ northwind-bi-project/
 
 ```bash
 # Cloner ou télécharger le projet
-cd northwind-bi-project
+cd Project-BI
 
 # Créer un environnement virtuel (recommandé)
 python -m venv venv
