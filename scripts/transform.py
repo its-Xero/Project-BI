@@ -6,7 +6,6 @@ Nettoyage, enrichissement et préparation pour l'analyse
 import pandas as pd
 import numpy as np
 import os
-from datetime import datetime
 
 class NorthwindTransformer:
     """Classe pour transformer les données extraites"""
